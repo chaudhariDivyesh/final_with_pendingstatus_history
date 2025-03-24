@@ -1,3 +1,110 @@
+# from django.shortcuts import render, redirect, get_object_or_404
+# from django.contrib.auth.decorators import login_required
+# from django.core.mail import send_mail
+# from django.http import JsonResponse, HttpResponse
+# from timetable.models import FixedLecture, TimeSlot, LectureHall
+# from .models import Booking
+# from .forms import BookingForm
+# from datetime import datetime
+# import uuid
+
+# def send_approval_email(authority_email, bookings):
+#     """Send a single email containing all approval tokens."""
+#     tokens = [str(b.approval_token) for b in bookings]
+#     token_string = ",".join(tokens)
+
+#     approval_link = f"http://127.0.0.1:8000/bookings/approve/?tokens={token_string}"
+#     rejection_link = f"http://127.0.0.1:8000/bookings/reject/?tokens={token_string}"
+
+#     time_slots = ", ".join(f"{b.time_slot.start_time} - {b.time_slot.end_time}" for b in bookings)
+
+#     send_mail(
+#         subject="LHC Booking Approval Required",
+#         message=(
+#             f"A new booking request needs your approval.\n\n"
+#             f"Lecture Hall: {bookings[0].lecture_hall.name}\n"
+#             f"Date: {bookings[0].date}\n"
+#             f"Time Slots: {time_slots}\n"
+#             f"Requested by: {bookings[0].user.username}\n\n"
+#             f"AC Required: {'Yes' if bookings[0].ac_required else 'No'}\n"
+#             f"Projector Required: {'Yes' if bookings[0].projector_required else 'No'}\n"
+#             f"Purpose: {bookings[0].purpose}\n\n"
+#             f"Estimated Price: {bookings[0].price} INR\n\n"
+#             f"✅ Approve: {approval_link}\n"
+#             f"❌ Reject: {rejection_link}"
+#         ),
+#         from_email="noreply@lhcportal.com",
+#         recipient_list=[authority_email],
+#     )
+
+# @login_required
+# def booking_form(request):
+#     """Handles multiple-slot booking, price calculation, and conflict validation."""
+#     if request.method == 'POST':
+#         form = BookingForm(request.POST)
+#         if form.is_valid():
+#             lecture_hall = form.cleaned_data["lecture_hall"]
+#             date = form.cleaned_data["date"]
+#             time_slots = form.cleaned_data["time_slots"]
+#             ac_required = form.cleaned_data["ac_required"]
+#             projector_required = form.cleaned_data["projector_required"]
+#             purpose = form.cleaned_data["purpose"]
+
+#             existing_bookings = Booking.objects.filter(
+#                 lecture_hall=lecture_hall, date=date, time_slot__in=time_slots
+#             ).exclude(status="Rejected")
+
+#             if existing_bookings.exists():
+#                 return render(request, 'bookings/booking_failed.html', {
+#                     'message': 'One or more selected slots are already booked or pending.'
+#                 })
+
+#             authorities = list(request.user.authorities.all())
+#             if not authorities:
+#                 return render(request, 'bookings/booking_failed.html', {'message': 'No authorities assigned for approval'})
+
+#             total_price = lecture_hall.ac_price if ac_required else 0
+#             if projector_required and lecture_hall.id in [18, 19, 20]:
+#                 total_price += lecture_hall.projector_price
+
+#             base_hours = 3
+#             extra_hours = max(0, len(time_slots) - base_hours)
+#             total_price += (extra_hours * (lecture_hall.ac_price * 0.35))
+
+#             bookings = []
+#             for time_slot in time_slots:
+#                 booking = Booking.objects.create(
+#                     user=request.user,
+#                     lecture_hall=lecture_hall,
+#                     date=date,
+#                     time_slot=time_slot,
+#                     status="Pending",
+#                     approval_token=str(uuid.uuid4()),  
+#                     approvals_pending={auth.email: False for auth in authorities},
+#                     ac_required=ac_required,
+#                     projector_required=projector_required,
+#                     purpose=purpose,
+#                     price=total_price
+#                 )
+#                 bookings.append(booking)
+
+#             first_authority_email = next(iter(bookings[0].approvals_pending.keys()), None)
+#             if first_authority_email:
+#                 send_approval_email(first_authority_email, bookings)
+
+#             return redirect('bookings:booking_success')
+
+#     else:
+#         form = BookingForm()
+
+#     return render(request, 'bookings/booking_form.html', {'form': form})
+
+
+
+
+
+
+
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.core.mail import send_mail
@@ -7,97 +114,6 @@ from .models import Booking
 from .forms import BookingForm
 from datetime import datetime
 import uuid
-
-def send_approval_email(authority_email, bookings):
-    """Send a single email containing all approval tokens."""
-    tokens = [str(b.approval_token) for b in bookings]
-    token_string = ",".join(tokens)
-
-    approval_link = f"http://127.0.0.1:8000/bookings/approve/?tokens={token_string}"
-    rejection_link = f"http://127.0.0.1:8000/bookings/reject/?tokens={token_string}"
-
-    time_slots = ", ".join(f"{b.time_slot.start_time} - {b.time_slot.end_time}" for b in bookings)
-
-    send_mail(
-        subject="LHC Booking Approval Required",
-        message=(
-            f"A new booking request needs your approval.\n\n"
-            f"Lecture Hall: {bookings[0].lecture_hall.name}\n"
-            f"Date: {bookings[0].date}\n"
-            f"Time Slots: {time_slots}\n"
-            f"Requested by: {bookings[0].user.username}\n\n"
-            f"AC Required: {'Yes' if bookings[0].ac_required else 'No'}\n"
-            f"Projector Required: {'Yes' if bookings[0].projector_required else 'No'}\n"
-            f"Purpose: {bookings[0].purpose}\n\n"
-            f"Estimated Price: {bookings[0].price} INR\n\n"
-            f"✅ Approve: {approval_link}\n"
-            f"❌ Reject: {rejection_link}"
-        ),
-        from_email="noreply@lhcportal.com",
-        recipient_list=[authority_email],
-    )
-
-@login_required
-def booking_form(request):
-    """Handles multiple-slot booking, price calculation, and conflict validation."""
-    if request.method == 'POST':
-        form = BookingForm(request.POST)
-        if form.is_valid():
-            lecture_hall = form.cleaned_data["lecture_hall"]
-            date = form.cleaned_data["date"]
-            time_slots = form.cleaned_data["time_slots"]
-            ac_required = form.cleaned_data["ac_required"]
-            projector_required = form.cleaned_data["projector_required"]
-            purpose = form.cleaned_data["purpose"]
-
-            existing_bookings = Booking.objects.filter(
-                lecture_hall=lecture_hall, date=date, time_slot__in=time_slots
-            ).exclude(status="Rejected")
-
-            if existing_bookings.exists():
-                return render(request, 'bookings/booking_failed.html', {
-                    'message': 'One or more selected slots are already booked or pending.'
-                })
-
-            authorities = list(request.user.authorities.all())
-            if not authorities:
-                return render(request, 'bookings/booking_failed.html', {'message': 'No authorities assigned for approval'})
-
-            total_price = lecture_hall.ac_price if ac_required else 0
-            if projector_required and lecture_hall.id in [18, 19, 20]:
-                total_price += lecture_hall.projector_price
-
-            base_hours = 3
-            extra_hours = max(0, len(time_slots) - base_hours)
-            total_price += (extra_hours * (lecture_hall.ac_price * 0.35))
-
-            bookings = []
-            for time_slot in time_slots:
-                booking = Booking.objects.create(
-                    user=request.user,
-                    lecture_hall=lecture_hall,
-                    date=date,
-                    time_slot=time_slot,
-                    status="Pending",
-                    approval_token=str(uuid.uuid4()),  
-                    approvals_pending={auth.email: False for auth in authorities},
-                    ac_required=ac_required,
-                    projector_required=projector_required,
-                    purpose=purpose,
-                    price=total_price
-                )
-                bookings.append(booking)
-
-            first_authority_email = next(iter(bookings[0].approvals_pending.keys()), None)
-            if first_authority_email:
-                send_approval_email(first_authority_email, bookings)
-
-            return redirect('bookings:booking_success')
-
-    else:
-        form = BookingForm()
-
-    return render(request, 'bookings/booking_form.html', {'form': form})
 
 @login_required
 def get_available_slots(request):
@@ -124,92 +140,77 @@ def get_available_slots(request):
     available_slots = TimeSlot.objects.exclude(id__in=occupied_slots).values("id", "start_time", "end_time")
 
     return JsonResponse(list(available_slots), safe=False)
+def send_approval_email(authority_email, bookings):
+    """Send a single email containing all approval tokens."""
+    tokens = [str(b.approval_token) for b in bookings]  # ✅ Convert UUIDs to strings
+    token_string = ",".join(tokens)  
 
+    approval_link = f"http://127.0.0.1:8000/bookings/approve/?tokens={token_string}"
+    rejection_link = f"http://127.0.0.1:8000/bookings/reject/?tokens={token_string}"
 
+    time_slots = ", ".join(f"{b.time_slot.start_time} - {b.time_slot.end_time}" for b in bookings)
 
+    send_mail(
+        subject="LHC Booking Approval Required",
+        message=(
+            f"A new booking request needs your approval.\n\n"
+            f"Lecture Hall: {bookings[0].lecture_hall.name}\n"
+            f"Date: {bookings[0].date}\n"
+            f"Time Slots: {time_slots}\n"
+            f"Requested by: {bookings[0].user.username}\n\n"
+            f"✅ Approve: {approval_link}\n"
+            f"❌ Reject: {rejection_link}"
+        ),
+        from_email="noreply@lhcportal.com",
+        recipient_list=[authority_email],
+    )
 
+@login_required
+def booking_form(request):
+    """Handles multiple-slot booking and prevents conflicts."""
+    if request.method == 'POST':
+        form = BookingForm(request.POST)
+        if form.is_valid():
+            lecture_hall = form.cleaned_data["lecture_hall"]
+            date = form.cleaned_data["date"]
+            time_slots = form.cleaned_data["time_slots"]
 
-# from django.shortcuts import render, redirect, get_object_or_404
-# from django.contrib.auth.decorators import login_required
-# from django.core.mail import send_mail
-# from django.http import JsonResponse, HttpResponse
-# from timetable.models import FixedLecture, TimeSlot, LectureHall
-# from .models import Booking
-# from .forms import BookingForm
-# from datetime import datetime
-# import uuid
+            existing_bookings = Booking.objects.filter(
+                lecture_hall=lecture_hall, date=date, time_slot__in=time_slots
+            ).exclude(status="Rejected")
 
-# def send_approval_email(authority_email, bookings):
-#     """Send a single email containing all approval tokens."""
-#     tokens = [str(b.approval_token) for b in bookings]  # ✅ Convert UUIDs to strings
-#     token_string = ",".join(tokens)  
+            if existing_bookings.exists():
+                return render(request, 'bookings/booking_failed.html', {
+                    'message': 'One or more selected slots are already booked or pending.'
+                })
 
-#     approval_link = f"http://127.0.0.1:8000/bookings/approve/?tokens={token_string}"
-#     rejection_link = f"http://127.0.0.1:8000/bookings/reject/?tokens={token_string}"
+            authorities = list(request.user.authorities.all())
+            if not authorities:
+                return render(request, 'bookings/booking_failed.html', {'message': 'No authorities assigned for approval'})
 
-#     time_slots = ", ".join(f"{b.time_slot.start_time} - {b.time_slot.end_time}" for b in bookings)
+            bookings = []
+            for time_slot in time_slots:
+                booking = Booking.objects.create(
+                    user=request.user,
+                    lecture_hall=lecture_hall,
+                    date=date,
+                    time_slot=time_slot,
+                    status="Pending",
+                    approval_token=str(uuid.uuid4()),  
+                    approvals_pending={auth.email: False for auth in authorities}
+                )
+                bookings.append(booking)
 
-#     send_mail(
-#         subject="LHC Booking Approval Required",
-#         message=(
-#             f"A new booking request needs your approval.\n\n"
-#             f"Lecture Hall: {bookings[0].lecture_hall.name}\n"
-#             f"Date: {bookings[0].date}\n"
-#             f"Time Slots: {time_slots}\n"
-#             f"Requested by: {bookings[0].user.username}\n\n"
-#             f"✅ Approve: {approval_link}\n"
-#             f"❌ Reject: {rejection_link}"
-#         ),
-#         from_email="noreply@lhcportal.com",
-#         recipient_list=[authority_email],
-#     )
+            first_authority_email = next(iter(bookings[0].approvals_pending.keys()), None)
+            if first_authority_email:
+                send_approval_email(first_authority_email, bookings)
 
-# @login_required
-# def booking_form(request):
-#     """Handles multiple-slot booking and prevents conflicts."""
-#     if request.method == 'POST':
-#         form = BookingForm(request.POST)
-#         if form.is_valid():
-#             lecture_hall = form.cleaned_data["lecture_hall"]
-#             date = form.cleaned_data["date"]
-#             time_slots = form.cleaned_data["time_slots"]
+            return redirect('bookings:booking_success')
 
-#             existing_bookings = Booking.objects.filter(
-#                 lecture_hall=lecture_hall, date=date, time_slot__in=time_slots
-#             ).exclude(status="Rejected")
+    else:
+        form = BookingForm()
 
-#             if existing_bookings.exists():
-#                 return render(request, 'bookings/booking_failed.html', {
-#                     'message': 'One or more selected slots are already booked or pending.'
-#                 })
-
-#             authorities = list(request.user.authorities.all())
-#             if not authorities:
-#                 return render(request, 'bookings/booking_failed.html', {'message': 'No authorities assigned for approval'})
-
-#             bookings = []
-#             for time_slot in time_slots:
-#                 booking = Booking.objects.create(
-#                     user=request.user,
-#                     lecture_hall=lecture_hall,
-#                     date=date,
-#                     time_slot=time_slot,
-#                     status="Pending",
-#                     approval_token=str(uuid.uuid4()),  
-#                     approvals_pending={auth.email: False for auth in authorities}
-#                 )
-#                 bookings.append(booking)
-
-#             first_authority_email = next(iter(bookings[0].approvals_pending.keys()), None)
-#             if first_authority_email:
-#                 send_approval_email(first_authority_email, bookings)
-
-#             return redirect('bookings:booking_success')
-
-#     else:
-#         form = BookingForm()
-
-#     return render(request, 'bookings/booking_form.html', {'form': form})
+    return render(request, 'bookings/booking_form.html', {'form': form})
 
 
 def approve_booking(request):

@@ -3,7 +3,7 @@ from django.db import models
 class LectureHall(models.Model):
     name = models.CharField(max_length=50, unique=True)
     capacity = models.PositiveIntegerField()
-    ac_price = models.DecimalField(max_digits=10, decimal_places=2)  # Fixed for 3 hours
+    ac_price = models.DecimalField(max_digits=10, decimal_places=2,default=0.00)  # Fixed for 3 hours
     projector_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)  # Only for LHC 18, 19, 20
 
     def __str__(self):
