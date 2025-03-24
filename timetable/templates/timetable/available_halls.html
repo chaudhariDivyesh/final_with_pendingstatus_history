@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block content %}
+    <h1>Available Lecture Halls</h1>
+    
+    {% if lecture_halls %}
+        <ul>
+            {% for hall in lecture_halls %}
+                <li>{{ hall.name }}</li>
+            {% endfor %}
+        </ul>
+    {% else %}
+        <p>No lecture halls available.</p>
+    {% endif %}
+{% endblock %}

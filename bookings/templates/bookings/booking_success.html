@@ -1,0 +1,13 @@
+<h2>Booking Successful</h2>
+
+{% if booking %}
+    <p>Your booking request has been submitted for approval.</p>
+    <p><strong>Lecture Hall:</strong> {{ booking.lecture_hall.name }}</p>
+    <p><strong>Date:</strong> {{ booking.date }}</p>
+    <p><strong>Time Slot:</strong> {{ booking.time_slot.start_time }} - {{ booking.time_slot.end_time }}</p>
+    <p><strong>Status:</strong> {{ booking.status }}</p>
+{% else %}
+    <p>No booking found.</p>
+{% endif %}
+
+<a href="{% url 'timetable_home' %}">Return to Timetable</a>

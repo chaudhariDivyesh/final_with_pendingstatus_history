@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Lecture Halls</title>
+</head>
+<body>
+    <h1>Available Lecture Halls</h1>
+    <ul>
+        {% for hall in lecture_halls %}
+            <li><a href="{% url 'timetable_view' hall.id %}">{{ hall.name }}</a></li>
+        {% endfor %}
+    </ul>
+</body>
+</html>

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}LHC Booking Portal{% endblock %}</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; padding: 0; }
+        nav { background-color: #333; padding: 10px; }
+        nav a, nav button { color: white; margin-right: 15px; text-decoration: none; background: none; border: none; cursor: pointer; }
+        .container { max-width: 800px; margin: auto; }
+        .message { padding: 10px; background-color: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="{% url 'timetable_home' %}">Timetable</a>
+        <a href="{% url 'bookings:booking_form' %}">New Booking</a>
+        <a href="{% url 'bookings:pending_approvals' %}">Approvals</a>
+
+        {% if user.is_authenticated %}
+            <form action="{% url 'logout' %}" method="post" style="display:inline;">
+                {% csrf_token %}
+                <button type="submit">Logout</button>
+            </form>
+        {% else %}
+            <a href="{% url 'login' %}">Login</a>
+        {% endif %}
+    </nav>
+
+    <div class="container">
+        {% if messages %}
+            {% for message in messages %}
+                <div class="message">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+        
+        {% block content %}{% endblock %}
+    </div>
+</body>
+</html>

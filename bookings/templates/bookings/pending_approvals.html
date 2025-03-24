@@ -1,0 +1,33 @@
+{% extends 'base.html' %}
+{% block title %}Pending Approvals{% endblock %}
+
+{% block content %}
+<h2>Pending Approvals</h2>
+
+{% if bookings %}
+    <table border="1">
+        <tr>
+            <th>User</th>
+            <th>Lecture Hall</th>
+            <th>Date</th>
+            <th>Time Slot</th>
+            <th>Actions</th>
+        </tr>
+        {% for booking in bookings %}
+        <tr>
+            <td>{{ booking.user.username }}</td>
+            <td>{{ booking.lecture_hall.name }}</td>
+            <td>{{ booking.date }}</td>
+            <td>{{ booking.time_slot.start_time }} - {{ booking.time_slot.end_time }}</td>
+            <td>
+                <a href="{% url 'approve_booking' booking.id %}">Approve</a> |
+                <a href="{% url 'reject_booking' booking.id %}">Reject</a>
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+{% else %}
+    <p>No pending approvals.</p>
+{% endif %}
+
+{% endblock %}

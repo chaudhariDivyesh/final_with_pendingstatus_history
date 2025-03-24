@@ -1,0 +1,8 @@
+{% extends 'base.html' %}
+{% block title %}Booking Approved{% endblock %}
+
+{% block content %}
+<h2>Booking Approved</h2>
+<p>The booking has been approved successfully.</p>
+<a href="{% url 'pending_approvals' %}">Back to Pending Approvals</a>
+{% endblock %}

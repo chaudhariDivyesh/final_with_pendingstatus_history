@@ -1,0 +1,78 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<h2>Timetable for {{ hall.name }}</h2>
+
+<!-- Date Selection Form -->
+<form method="GET" action="">
+    <label for="date">Select Date:</label>
+    <input type="date" id="date" name="date" value="{{ selected_date }}" required>
+    <button type="submit">View Timetable</button>
+</form>
+
+<!-- Weekly Timetable -->
+{% for day, entries in schedule.items %}
+    <h3>{{ day }} ({{ entries.0.date }})</h3>
+    <table border="1">
+        <tr>
+            <th>Time Slot</th>
+            <th>Subject/Booking</th>
+            {% if user.is_authenticated %}
+                <th>Booked By</th>
+                <th>Status</th>
+            {% endif %}
+        </tr>
+
+        {% for entry in entries %}
+        <tr>
+            <td>{{ entry.time_slot.start_time }} - {{ entry.time_slot.end_time }}</td>
+
+            {% if entry.subject %}
+                <!-- Fixed Lecture -->
+                <td>{{ entry.subject }}</td>
+                {% if user.is_authenticated %}
+                    <td>Fixed Lecture</td>
+                    <td> - </td>
+                {% endif %}
+
+            {% elif entry.approved_booking %}
+                <!-- Approved Booking (Visible to All) -->
+                <td>{{ entry.approved_booking.purpose|default:"Booked" }}</td>
+                {% if user.is_authenticated %}
+                    <td>{{ entry.approved_booking.user.username }}</td>
+                    <td>✅ Approved</td>
+                {% endif %}
+
+            {% elif entry.pending_bookings %}
+                <!-- Pending Bookings (Visible Only to Requesting User) -->
+                {% for pending in entry.pending_bookings %}
+                    <td>⏳ Pending</td>
+                    <td>{{ pending.booking.user.username }}</td>
+                    <td>⏳ Pending ({{ pending.remaining_authority }})</td>
+                {% endfor %}
+
+            {% else %}
+                <!-- Available Slot -->
+                <td>Available</td>
+                {% if user.is_authenticated %}
+                    <td> - </td>
+                    <td> - </td>
+                {% endif %}
+            {% endif %}
+        </tr>
+        {% endfor %}
+    </table>
+{% endfor %}
+
+{% if user.is_authenticated %}
+    <a href="{% url 'bookings:booking_form' %}">Request a Booking</a>
+{% endif %}
+
+<script>
+    // Auto-submit form when date is changed
+    document.getElementById('date').addEventListener('change', function() {
+        this.form.submit();
+    });
+</script>
+
+{% endblock %}
