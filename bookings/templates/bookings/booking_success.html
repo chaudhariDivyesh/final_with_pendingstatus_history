@@ -2,10 +2,26 @@
 
 {% if booking %}
     <p>Your booking request has been submitted for approval.</p>
+
     <p><strong>Lecture Hall:</strong> {{ booking.lecture_hall.name }}</p>
     <p><strong>Date:</strong> {{ booking.date }}</p>
-    <p><strong>Time Slot:</strong> {{ booking.time_slot.start_time }} - {{ booking.time_slot.end_time }}</p>
+
+    <p><strong>Time Slots:</strong></p>
+    <ul>
+        {% for slot in booking.time_slots.all %}
+            <li>{{ slot.start_time }} - {{ slot.end_time }}</li>
+        {% endfor %}
+    </ul>
+
+    <p><strong>Purpose:</strong> {{ booking.purpose }}</p>
+
+    <p><strong>AC Required:</strong> {{ booking.ac_required|yesno:"Yes,No" }}</p>
+    <p><strong>Projector Required:</strong> {{ booking.projector_required|yesno:"Yes,No" }}</p>
+
+    <p><strong>Total Price:</strong> Rs {{ booking.price|floatformat:2 }}</p>
+
     <p><strong>Status:</strong> {{ booking.status }}</p>
+
 {% else %}
     <p>No booking found.</p>
 {% endif %}

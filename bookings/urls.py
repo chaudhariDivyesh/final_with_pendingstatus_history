@@ -14,7 +14,7 @@ urlpatterns = [
    # path("pending/", pending_approvals, name="pending_approvals"),
     path("approve/", views.approve_booking, name="approve_booking"),
     path("reject/", views.reject_booking, name="reject_booking"),
-
+    path("get_pricing/", views.get_pricing, name="get_pricing"),
     path("success/", views.booking_success, name="booking_success"),  # ✅ Fix
     path('get_available_slots/', get_available_slots, name='get_available_slots'),
 ]

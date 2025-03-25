@@ -8,10 +8,12 @@ import logging
 logger = logging.getLogger(__name__)
 
 def timetable_home(request):
+    """ View for selecting a lecture hall to view its timetable """
     lecture_halls = LectureHall.objects.all()
     return render(request, "timetable/home.html", {"lecture_halls": lecture_halls})
 
 def timetable_view(request, hall_id):
+    """ View for displaying the weekly timetable of a specific lecture hall """
     hall = get_object_or_404(LectureHall, id=hall_id)
 
     # Get selected date or default to today
@@ -41,10 +43,11 @@ def timetable_view(request, hall_id):
     # Group bookings by (date, time_slot) key
     booking_dict = {}
     for booking in bookings:
-        key = (booking.date, booking.time_slot.id)
-        if key not in booking_dict:
-            booking_dict[key] = []
-        booking_dict[key].append(booking)
+        for time_slot in booking.time_slots.all():  # ✅ Loop through all booked time slots
+            key = (booking.date, time_slot.id)
+            if key not in booking_dict:
+                booking_dict[key] = []
+            booking_dict[key].append(booking)
 
     # Create structured schedule
     schedule = {}
@@ -55,6 +58,8 @@ def timetable_view(request, hall_id):
         schedule[weekday] = []
         for time_slot in time_slots:
             lecture = fixed_lectures.filter(day=weekday, time_slot=time_slot).first()
+            
+            # Get all bookings for this date and time slot
             slot_bookings = booking_dict.get((date, time_slot.id), [])
 
             # Get approved booking
@@ -64,7 +69,6 @@ def timetable_view(request, hall_id):
             pending_bookings = []
             for b in slot_bookings:
                 if b.status == "Pending" and b.user == request.user:
-                    # Find the next authority who has not approved yet
                     remaining_authorities = [email for email, approved in b.approvals_pending.items() if not approved]
                     pending_bookings.append({
                         "booking": b,

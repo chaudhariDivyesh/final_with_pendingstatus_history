@@ -5,7 +5,7 @@
 {% block content %}
 <h2>Book a Lecture Hall</h2>
 
-<!-- Display form errors if any -->
+<!-- Show form errors if any -->
 {% if form.errors %}
     <div class="alert alert-danger">
         <strong>Errors:</strong>
@@ -19,18 +19,43 @@
     </div>
 {% endif %}
 
-<!-- Booking form -->
 <form method="post">
     {% csrf_token %}
 
     <div>
-        <label for="id_lecture_hall">Select Lecture Hall:</label>
+        <label>Select Lecture Hall:</label>
         {{ form.lecture_hall }}
     </div>
 
     <div>
-        <label for="id_date">Select Date:</label>
+        <label>Select Date:</label>
         <input type="date" name="date" id="id_date">
+    </div>
+
+    <!-- 🟢 Purpose Field Added Here -->
+    <div>
+        <label for="id_purpose">Purpose of Booking:</label>
+        <textarea name="purpose" id="id_purpose" rows="3">{{ form.purpose.value|default:'' }}</textarea>
+    </div>
+
+    <!-- Display Pricing Information -->
+    <div id="pricing_info">
+        <!-- Display Capacity -->
+        <p id="lecture_hall_capacity">Capacity: -</p>
+        <p>Base Price (Non-AC): <span id="base_price_non_ac">-</span> Rs</p>
+        <p>Base Price (AC): <span id="base_price_ac">-</span> Rs</p>
+        <p>Projector Price per hour: <span id="projector_price">-</span> Rs</p>
+        <p>Extra Charge after 3 hours: <span id="extra_charge">-</span> Rs</p>
+    </div>
+
+    <div>
+        <label for="id_ac_required">AC Required:</label>
+        {{ form.ac_required }}
+    </div>
+
+    <div>
+        <label for="id_projector_required">Projector Required:</label>
+        {{ form.projector_required }}
     </div>
 
     <div>
@@ -44,34 +69,105 @@
         </div>
     </div>
 
+    <!-- Display Total Price -->
+    <h3>Total Price: <span id="total_price">-</span> Rs</h3>
+
     <button type="submit">Submit Booking</button>
 </form>
 
 <script>
-    document.getElementById('id_lecture_hall').addEventListener('change', fetchAvailableSlots);
-    document.getElementById('id_date').addEventListener('change', fetchAvailableSlots);
+    document.addEventListener("DOMContentLoaded", function () {
+        const lectureHallSelect = document.getElementById('id_lecture_hall');
+        const dateInput = document.getElementById('id_date');
+        const timeSlotsContainer = document.getElementById('time_slots_container');
+        const acCheckbox = document.getElementById('id_ac_required');
+        const projectorCheckbox = document.getElementById('id_projector_required');
+        const totalPriceDisplay = document.getElementById('total_price');
 
-    function fetchAvailableSlots() {
-        const hallId = document.getElementById('id_lecture_hall').value;
-        const date = document.getElementById('id_date').value;
+        let basePrice = { ac: 0, non_ac: 0, projector: 0, extra_charge: 0 };
+        let selectedLectureHallName = "";
 
-        if (hallId && date) {
+        function fetchPricing() {
+            const hallId = lectureHallSelect.value;
+            if (!hallId) return;
+
+            fetch(`/bookings/get_pricing/?lecture_hall=${hallId}`)
+                .then(response => response.json())
+                .then(data => {
+                    basePrice.ac = data.ac_price;
+                    basePrice.non_ac = data.non_ac_price;
+                    basePrice.projector = data.projector_price;
+                    basePrice.extra_charge = data.extra_charge;
+                    selectedLectureHallName = data.name;
+
+                    document.getElementById("base_price_ac").innerText = `Rs ${basePrice.ac.toFixed(2)}`;
+                    document.getElementById("base_price_non_ac").innerText = `Rs ${basePrice.non_ac.toFixed(2)}`;
+                    document.getElementById("projector_price").innerText = `Rs ${basePrice.projector.toFixed(2)}`;
+                    document.getElementById("extra_charge").innerText = `Rs ${basePrice.extra_charge.toFixed(2)}`;
+                    document.getElementById("lecture_hall_capacity").innerText = `Capacity: ${data.capacity}`;
+
+                    calculateTotalPrice();
+                })
+                .catch(error => console.error("Error fetching pricing:", error));
+        }
+
+        function fetchAvailableSlots() {
+            const hallId = lectureHallSelect.value;
+            const date = dateInput.value;
+
+            if (!hallId || !date) return;
+
             fetch(`/bookings/get_available_slots/?lecture_hall=${hallId}&date=${date}`)
                 .then(response => response.json())
                 .then(data => {
-                    const container = document.getElementById('time_slots_container');
-                    container.innerHTML = "";
+                    timeSlotsContainer.innerHTML = "";
                     data.forEach(slot => {
-                        const slotLabel = `${slot.start_time} - ${slot.end_time}`; // Correcting the label
                         const checkbox = `<div>
-                            <input type="checkbox" name="time_slots" value="${slot.id}" id="slot_${slot.id}">
-                            <label for="slot_${slot.id}">${slotLabel}</label>
+                            <input type="checkbox" name="time_slots" value="${slot.id}" class="time-slot">
+                            <label>${slot.start_time} - ${slot.end_time}</label>
                         </div>`;
-                        container.innerHTML += checkbox;
+                        timeSlotsContainer.innerHTML += checkbox;
+                    });
+
+                    document.querySelectorAll(".time-slot").forEach(checkbox => {
+                        checkbox.addEventListener("change", calculateTotalPrice);
                     });
                 })
-                .catch(error => console.error("Error fetching time slots:", error));
+                .catch(error => console.error("Error fetching slots:", error));
         }
-    }
+
+        function calculateTotalPrice() {
+            const acSelected = acCheckbox.checked;
+            const projectorSelected = projectorCheckbox.checked;
+            const selectedSlots = document.querySelectorAll(".time-slot:checked").length;
+
+            if (selectedSlots === 0) {
+                totalPriceDisplay.innerText = "Rs 0";
+                return;
+            }
+
+            const baseRate = acSelected ? basePrice.ac : basePrice.non_ac;
+            const baseHours = 3;
+            const extraChargePerHour = baseRate * 0.35;
+            const perSlotPrice = baseRate / 6;
+
+            let totalPrice = baseRate;
+
+            if (selectedSlots > 6) {
+                const extraSlots = selectedSlots - 6;
+                totalPrice += (extraSlots / 2) * extraChargePerHour;
+            }
+
+            if (projectorSelected && ["L18", "L19", "L20"].includes(selectedLectureHallName)) {
+                totalPrice += selectedSlots * basePrice.projector;
+            }
+            totalPriceDisplay.innerText = `Rs ${totalPrice.toFixed(2)}`;
+        }
+
+        lectureHallSelect.addEventListener("change", fetchPricing);
+        dateInput.addEventListener("change", fetchAvailableSlots);
+        acCheckbox.addEventListener("change", calculateTotalPrice);
+        projectorCheckbox.addEventListener("change", calculateTotalPrice);
+    });
 </script>
 {% endblock %}
