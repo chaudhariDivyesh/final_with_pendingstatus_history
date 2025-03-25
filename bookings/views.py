@@ -309,6 +309,7 @@ import uuid
 from decimal import Decimal
 from datetime import datetime, timedelta
 import uuid
+from django.utils import timezone
 
 def get_pricing(request):
     lecture_hall_id = request.GET.get("lecture_hall")
@@ -330,9 +331,15 @@ def get_pricing(request):
 
 
 def send_approval_email(authority_email, booking):
-    """Send a single email containing all approval tokens for a booking."""
-    approval_link = f"http://127.0.0.1:8000/bookings/approve/?token={booking.approval_token}"
-    rejection_link = f"http://127.0.0.1:8000/bookings/reject/?token={booking.approval_token}"
+    """Send a single email containing an authority-specific approval and rejection link."""
+    authority_token = booking.approval_tokens.get(authority_email)  # Get specific token
+
+    if not authority_token:
+        return  # Safety check
+
+    # Separate approval and rejection links per authority
+    approval_link = f"http://127.0.0.1:8000/bookings/approve/?global_token={booking.approval_token}&authority_token={authority_token}"
+    rejection_link = f"http://127.0.0.1:8000/bookings/reject/?global_token={booking.approval_token}&authority_token={authority_token}"
 
     time_slots = ", ".join(f"{ts.start_time} - {ts.end_time}" for ts in booking.time_slots.all())
 
@@ -444,35 +451,15 @@ def booking_form(request):
 
                 # Final price calculation
                 total_price = base_price + extra_charge + projector_charge
-            # authorities = list(request.user.authorities.all())
-            # if not authorities:
-            #     return render(request, 'bookings/booking_failed.html', {'message': 'No authorities assigned for approval'})
-
-            # Base price (for up to 3 hours = 6 slots)
-            # base_price = lecture_hall.ac_price if ac_required else lecture_hall.non_ac_price
-            # per_slot_price = base_price / 6  # 3 hours = 6 slots
-
-            # total_slots = len(time_slots)
-            # extra_slots = max(0, total_slots - 6)  # Extra slots beyond 3 hours
-
-            # # Extra charge: 35% per extra slot
-            # extra_charge = (per_slot_price * Decimal("0.35")) * extra_slots  
-
-            # # Projector charge: Only for L18, L19, L20 at ₹1000 per slot
-            # projector_charge = 0
-            # if projector_required and lecture_hall.name in ["L18", "L19", "L20"]:
-            #     projector_charge = 1000 * total_slots  # ₹1000 per slot
-
-            # # Final price calculation
-            # total_price = base_price + extra_charge + projector_charge
-
-            # Create a single booking instance and assign multiple time slots
+           
+            approval_tokens = {auth.email: str(uuid.uuid4()) for auth in authorities}
             booking = Booking.objects.create(
                 user=request.user,
                 lecture_hall=lecture_hall,
                 date=date,
                 status=status,
-                approval_token=str(uuid.uuid4()),  
+                approval_token=str(uuid.uuid4()), 
+                approval_tokens=approval_tokens, 
                 approvals_pending={auth.email: False for auth in authorities},
                 ac_required=ac_required,
                 projector_required=projector_required,
@@ -518,36 +505,43 @@ def get_available_slots(request):
 
     return JsonResponse(list(available_slots), safe=False)
 
-
 def approve_booking(request):
-    """Approves a booking from the provided token."""
-    token = request.GET.get("token")
-    if not token:
+    """Approves a booking from the provided tokens."""
+    global_token = request.GET.get("global_token")
+    authority_token = request.GET.get("authority_token")
+
+    if not global_token or not authority_token:
         return HttpResponse("Invalid or expired approval link.", status=400)
 
-    booking = get_object_or_404(Booking, approval_token=token)
+    # 🔹 Fetch the booking using the global token
+    booking = get_object_or_404(Booking, approval_token=global_token)
 
+    # 🔹 Find the corresponding authority email
     authority_email = next(
-        (email for email, approved in booking.approvals_pending.items() if not approved), 
+        (email for email, token in booking.approval_tokens.items() if token == authority_token),
         None
     )
 
     if not authority_email:
-        return HttpResponse("This booking is already fully approved.", status=400)
+        return HttpResponse("Invalid approval token.", status=400)
 
+    # 🔹 Prevent duplicate approvals or modifying finalized bookings
+    if booking.status in ["Approved", "Rejected"]:
+        return HttpResponse(f"Booking is already {booking.status}. No further action needed.", status=400)
+
+    if booking.approvals_pending.get(authority_email, False):
+        return HttpResponse("You have already approved this booking.", status=400)
+
+    # 🔹 Mark this authority as approved
     booking.approvals_pending[authority_email] = True
-    if all(booking.approvals_pending.values()):  # If all approvals are done
+
+    # 🔹 If all approvals are done, finalize booking
+    if all(booking.approvals_pending.values()):
         booking.status = "Approved"
-    booking.save()
+        booking.decision_time = timezone.now()
+        booking.save()
 
-    next_approver_email = next(
-        (email for email, approved in booking.approvals_pending.items() if not approved), 
-        None
-    )
-
-    if next_approver_email:
-        send_approval_email(next_approver_email, booking)
-    else:
+        # Notify user
         send_mail(
             subject="Booking Approved ✅",
             message=f"Your booking for {booking.lecture_hall.name} on {booking.date} "
@@ -556,32 +550,132 @@ def approve_booking(request):
             recipient_list=[booking.user.email],
         )
 
+        return HttpResponse("Booking fully approved!", status=200)
+
+    booking.save()
+
+    # 🔹 Find the next pending authority
+    next_approver_email = next(
+        (email for email, approved in booking.approvals_pending.items() if not approved),
+        None
+    )
+
+    if next_approver_email:
+        send_approval_email(next_approver_email, booking)
+
     return HttpResponse("Booking approved successfully!", status=200)
-
-
 def reject_booking(request):
-    """Rejects a booking from the provided token."""
-    token = request.GET.get("token")
-    if not token:
+    """Rejects a booking from the provided tokens."""
+    global_token = request.GET.get("global_token")
+    authority_token = request.GET.get("authority_token")
+
+    if not global_token or not authority_token:
         return HttpResponse("Invalid or expired rejection link.", status=400)
 
-    booking = get_object_or_404(Booking, approval_token=token)
+    # 🔹 Fetch the booking using the global token
+    booking = get_object_or_404(Booking, approval_token=global_token)
+
+    # 🔹 Find the corresponding authority email
+    authority_email = next(
+        (email for email, token in booking.approval_tokens.items() if token == authority_token),
+        None
+    )
+
+    if not authority_email:
+        return HttpResponse("Invalid rejection token.", status=400)
+
+    # 🔹 Prevent rejections if the booking is already finalized
+    if booking.status in ["Approved", "Rejected"]:
+        return HttpResponse(f"Booking is already {booking.status}. No further action needed.", status=400)
+
+    # 🔹 Mark the booking as rejected
     booking.status = "Rejected"
-    booking.approvals_pending = {}  
+    booking.decision_time = timezone.now()
+    booking.approvals_pending = {}  # Clear all pending approvals
     booking.save()
+
+    # 🔹 Notify the user that their booking was rejected
+    send_mail(
+        subject="Booking Rejected ❌",
+        message=f"Unfortunately, your booking for {booking.lecture_hall.name} on {booking.date} "
+                f"({', '.join([ts.start_time.strftime('%H:%M') for ts in booking.time_slots.all()])}) has been rejected.",
+        from_email="noreply@lhcportal.com",
+        recipient_list=[booking.user.email],
+    )
 
     return HttpResponse("Booking rejected successfully!", status=200)
 
+
+# def approve_booking(request):
+#     """Approves a booking from the provided token."""
+#     token = request.GET.get("token")
+#     if not token:
+#         return HttpResponse("Invalid or expired approval link.", status=400)
+
+#     booking = get_object_or_404(Booking, approval_token=token)
+
+#     authority_email = next(
+#         (email for email, approved in booking.approvals_pending.items() if not approved), 
+#         None
+#     )
+
+#     if not authority_email:
+#         return HttpResponse("This booking is already fully approved.", status=400)
+
+#     booking.approvals_pending[authority_email] = True
+#     if all(booking.approvals_pending.values()):  # If all approvals are done
+#         booking.status = "Approved"
+#         booking.decision_time = timezone.now()
+#     booking.save()
+
+#     next_approver_email = next(
+#         (email for email, approved in booking.approvals_pending.items() if not approved), 
+#         None
+#     )
+
+#     if next_approver_email:
+#         send_approval_email(next_approver_email, booking)
+#     else:
+#         send_mail(
+#             subject="Booking Approved ✅",
+#             message=f"Your booking for {booking.lecture_hall.name} on {booking.date} "
+#                     f"({', '.join([ts.start_time.strftime('%H:%M') for ts in booking.time_slots.all()])}) has been fully approved!",
+#             from_email="noreply@lhcportal.com",
+#             recipient_list=[booking.user.email],
+#         )
+
+#     return HttpResponse("Booking approved successfully!", status=200)
+
+
+# def reject_booking(request):
+#     """Rejects a booking from the provided token."""
+#     token = request.GET.get("token")
+#     if not token:
+#         return HttpResponse("Invalid or expired rejection link.", status=400)
+
+#     booking = get_object_or_404(Booking, approval_token=token)
+#     booking.status = "Rejected"
+#     booking.decision_time = timezone.now()
+#     booking.approvals_pending = {}  
+#     booking.save()
+
+#     return HttpResponse("Booking rejected successfully!", status=200)
+
 @login_required
 def pending_approvals(request):
-    """Lists bookings requiring approval from the logged-in user."""
-    bookings = Booking.objects.filter(status="Pending").extra(
-        where=["approvals_pending ->> %s = 'false'"], params=[request.user.email]
-    )
+    """Lists bookings requested by the logged-in user that are still pending approval."""
+    bookings = Booking.objects.filter(user=request.user, status="Pending")
     return render(request, 'bookings/pending_approvals.html', {'bookings': bookings})
+
 
 @login_required
 def booking_success(request):
     """Displays the booking success page with the user's latest booking."""
     latest_booking = Booking.objects.filter(user=request.user).order_by('-id').first()
     return render(request, 'bookings/booking_success.html', {'booking': latest_booking})
+
+@login_required
+def booking_history(request):
+    user = request.user
+    bookings = Booking.objects.filter(user=user).order_by('-request_time')  # Show latest first
+    return render(request, 'bookings/booking_history.html', {'bookings': bookings})

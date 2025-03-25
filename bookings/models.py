@@ -100,6 +100,7 @@ from django.conf import settings
 import uuid
 from timetable.models import LectureHall, TimeSlot
 from django.core.mail import send_mail
+from django.utils.timezone import now
 
 class Booking(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
@@ -108,13 +109,14 @@ class Booking(models.Model):
     time_slots = models.ManyToManyField(TimeSlot)  # ✅ Allow multiple slots
     purpose = models.TextField(blank=True, null=True)
     approvals_pending = models.JSONField(default=dict)
-
+    
     ac_required = models.BooleanField(default=False)
     projector_required = models.BooleanField(default=False)
     price = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
     ACADEMIC = 'academic'
     NON_ACADEMIC = 'non-academic'
-    
+    request_time = models.DateTimeField(default=now)  # When booking was requested
+    decision_time = models.DateTimeField(null=True, blank=True)  # When approved/rejected
     BOOKING_TYPE_CHOICES = [
         (ACADEMIC, 'Academic'),
         (NON_ACADEMIC, 'Non-Academic'),
@@ -132,6 +134,7 @@ class Booking(models.Model):
     ]
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Pending')
     approval_token = models.UUIDField(default=uuid.uuid4, unique=True)
+    approval_tokens = models.JSONField(default=dict)  # {authority_email: token}
 
     def approve(self, authority_email):
         """Marks approval from a specific authority and updates status."""

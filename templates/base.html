@@ -17,6 +17,7 @@
         <a href="{% url 'timetable_home' %}">Timetable</a>
         <a href="{% url 'bookings:booking_form' %}">New Booking</a>
         <a href="{% url 'bookings:pending_approvals' %}">Pending Status</a>
+        <a href="{% url 'bookings:booking_history' %}">Booking History</a>
         {% comment %} <a href="{% url 'bookings:pending_approvals' %}">Pending Status</a> {% endcomment %}
         {% if user.is_authenticated %}
             <form action="{% url 'logout' %}" method="post" style="display:inline;">

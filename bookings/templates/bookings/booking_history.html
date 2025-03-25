@@ -1,8 +1,8 @@
 {% extends 'base.html' %}
-{% block title %}Pending Bookings{% endblock %}
+{% block title %}Booking History{% endblock %}
 
 {% block content %}
-<h2>Your Pending Bookings</h2>
+<h2>Your Booking History</h2>
 
 {% if bookings %}
     <table border="1">
@@ -17,7 +17,8 @@
             <th>Booking Type</th>
             <th>Status</th>
             <th>Approvals</th>
-            <th>Request Time</th>  <!-- New Column -->
+            <th>Request Time</th>
+            <th>Decision Time</th>
         </tr>
         {% for booking in bookings %}
         <tr>
@@ -33,7 +34,17 @@
             <td>{{ booking.projector_required|yesno:"Yes,No" }}</td>
             <td>₹{{ booking.price }}</td>
             <td>{{ booking.booking_type }}</td>
-            <td>{{ booking.status }}</td>
+            <td>
+                {% if booking.status == "Approved" %}
+                    ✅ Approved
+                {% elif booking.status == "Rejected" %}
+                    ❌ Rejected
+                {% elif booking.status == "Cancelled" %}
+                    🚫 Cancelled
+                {% else %}
+                    ⏳ Pending
+                {% endif %}
+            </td>
             <td>
                 <ul>
                     {% for authority, is_approved in booking.approvals_pending.items %}
@@ -48,12 +59,19 @@
                     {% endfor %}
                 </ul>
             </td>
-            <td>{{ booking.request_time|date:"Y-m-d H:i:s" }}</td> <!-- Displaying Request Time -->
+            <td>{{ booking.request_time|date:"Y-m-d H:i:s" }}</td>
+            <td>
+                {% if booking.status == "Approved" or booking.status == "Rejected" %}
+                    {{ booking.decision_time|date:"Y-m-d H:i:s" }}
+                {% else %}
+                    ⏳ Pending
+                {% endif %}
+            </td>
         </tr>
         {% endfor %}
     </table>
 {% else %}
-    <p>You have no pending bookings.</p>
+    <p>You have no past bookings.</p>
 {% endif %}
 
 {% endblock %}
