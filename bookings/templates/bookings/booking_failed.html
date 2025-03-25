@@ -4,5 +4,7 @@
 {% block content %}
 <h2>Booking Failed</h2>
 <p>{{ message }}</p>
-<a href="{% url 'booking_form' %}">Try Again</a>
+<form action="{% url 'bookings:booking_form' %}" method="post">
+<!-- Provide a direct link to the booking form -->
+<a href="{% url 'bookings:booking_form' %}" class="btn btn-primary">Try Again</a    
 {% endblock %}

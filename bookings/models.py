@@ -90,6 +90,11 @@
 
 #     def __str__(self):
 #         return f"Booking for {self.user.username} on {self.date} at {self.lecture_hall.name} ({self.status})"
+# import uuid
+# from django.db import models
+# from django.conf import settings
+# from django.core.mail import send_mail
+# from timetable.models import LectureHall, TimeSlot
 from django.db import models
 from django.conf import settings
 import uuid
@@ -107,7 +112,19 @@ class Booking(models.Model):
     ac_required = models.BooleanField(default=False)
     projector_required = models.BooleanField(default=False)
     price = models.DecimalField(max_digits=10, decimal_places=2, default=0.0)
-
+    ACADEMIC = 'academic'
+    NON_ACADEMIC = 'non-academic'
+    
+    BOOKING_TYPE_CHOICES = [
+        (ACADEMIC, 'Academic'),
+        (NON_ACADEMIC, 'Non-Academic'),
+    ]
+    
+    booking_type = models.CharField(
+        max_length=20,
+        choices=BOOKING_TYPE_CHOICES,
+        default=NON_ACADEMIC,
+    )
     STATUS_CHOICES = [
         ('Pending', 'Pending'),
         ('Approved', 'Approved'),
@@ -182,12 +199,14 @@ class Booking(models.Model):
         time_slots_str = ", ".join([f"{slot.start_time} - {slot.end_time}" for slot in self.time_slots.all()])
         
         return (
-            f"Booking for {self.user.username} on {self.date} at {self.lecture_hall.name} "
-            f"({self.status})\n"
+            f"Booking ID: {self.id}\n"
+            f"Booking for {self.user.username} on {self.date} at {self.lecture_hall.name} ({self.status})\n"
+            f"Booking Type: {self.get_booking_type_display()}\n"  # ✅ Shows 'Academic' or 'Non-Academic'
             f"Time Slots: {time_slots_str}\n"
             f"Purpose: {self.purpose or 'N/A'}\n"
             f"AC Required: {'Yes' if self.ac_required else 'No'}\n"
             f"Projector Required: {'Yes' if self.projector_required else 'No'}\n"
             f"Price: ₹{self.price}"
         )
+
 

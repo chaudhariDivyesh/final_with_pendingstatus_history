@@ -303,10 +303,12 @@ from django.core.mail import send_mail
 from django.http import JsonResponse, HttpResponse
 from timetable.models import FixedLecture, TimeSlot, LectureHall
 from .models import Booking
-from .forms import BookingForm
+from .forms import BookingForm,is_exam_period,is_holiday_or_sunday,is_at_least_2_days_advance
 from datetime import datetime
 import uuid
 from decimal import Decimal
+from datetime import datetime, timedelta
+import uuid
 
 def get_pricing(request):
     lecture_hall_id = request.GET.get("lecture_hall")
@@ -354,18 +356,48 @@ def send_approval_email(authority_email, booking):
     )
 
 
+
+
+# Function to check if the date is a holiday
+def is_holiday(date):
+    # Implement the holiday check (e.g., by looking up from a list or a model of holidays)
+    return date.weekday() == 6  # Sunday check (if holiday is Sunday)
+
+
+
 @login_required
 def booking_form(request):
     """Handles multiple-slot booking, price calculation, and conflict validation."""
     if request.method == 'POST':
         form = BookingForm(request.POST)
         if form.is_valid():
+            user = request.user  # Access the user here
             lecture_hall = form.cleaned_data["lecture_hall"]
             date = form.cleaned_data["date"]
             time_slots = form.cleaned_data["time_slots"]
             ac_required = form.cleaned_data["ac_required"]
             projector_required = form.cleaned_data["projector_required"]
             purpose = form.cleaned_data["purpose"]
+            booking_type = form.cleaned_data["booking_type"]
+            
+            # 1. Check if booking is during exam period (midsem or endsem)
+            if is_exam_period(date):
+                return render(request, 'bookings/booking_failed.html', {
+                    'message': 'Booking is not allowed during midsem or endsem exams.'})
+
+            if booking_type == 'academic' and request.user.role not in ['admin', 'faculty']:
+                return render(request, 'bookings/booking_failed.html', {
+                    'message': 'Only faculty/admin can apply for academic bookings.'})
+
+            # 3. Check if the booking is for academic purposes on holidays/Sundays
+            if booking_type == 'academic' and is_holiday_or_sunday(date):
+                return render(request, 'bookings/booking_failed.html', {
+                    'message': 'No academic bookings allowed on holidays or Sundays.'})
+
+            # 4. For non-academic bookings, check if it is at least 2 days in advance
+            if booking_type == 'non-academic' and date < (datetime.now().date() + timedelta(days=2)):
+                return render(request, 'bookings/booking_failed.html', {
+                    'message': 'Non-academic bookings must be made at least 2 days in advance.'})
 
             # Check if any selected slot is already booked
             existing_bookings = Booking.objects.filter(
@@ -374,40 +406,72 @@ def booking_form(request):
                 time_slots__in=time_slots  # ✅ Use 'in' for ManyToManyField
             ).exclude(status="Rejected").distinct()
 
-
             if existing_bookings.exists():
                 return render(request, 'bookings/booking_failed.html', {
-                    'message': 'One or more selected slots are already booked or pending.'
-                })
+                    'message': 'One or more selected slots are already booked or pending.'})
+            
 
-            authorities = list(request.user.authorities.all())
-            if not authorities:
-                return render(request, 'bookings/booking_failed.html', {'message': 'No authorities assigned for approval'})
+            # 6. Set booking approval status and price
+            if request.user.role in ['admin', 'faculty']:  
+                # ✅ Auto-approve for faculty/admin  
+                authorities={}
+                approvals_pending = {}  
+                status = "Approved"      
+            else:
+                # ✅ Require approval for students  
+                authorities = list(request.user.authorities.all())  
+                if not authorities:
+                    return render(request, 'bookings/booking_failed.html', {
+                        'message': 'No authorities assigned for approval.'})  
+                approvals_pending = {auth.email: False for auth in authorities}  
+                status = "Pending"
+            
+            # ✅ Academic bookings are free
+            if booking_type == 'academic':
+                total_price = 0
+            else:
+                # Calculate the price only for non-academic bookings
+                base_price = lecture_hall.ac_price if ac_required else lecture_hall.non_ac_price
+                per_slot_price = base_price / 6  # 3 hours = 6 slots
+                total_slots = len(time_slots)
+                extra_slots = max(0, total_slots - 6)  # Extra slots beyond 3 hours
+                extra_charge = (per_slot_price * Decimal("0.35")) * extra_slots  
+
+                # Projector charge: Only for L18, L19, L20 at ₹1000 per slot
+                projector_charge = 0
+                if projector_required and lecture_hall.name in ["L18", "L19", "L20"]:
+                    projector_charge = 1000 * total_slots  
+
+                # Final price calculation
+                total_price = base_price + extra_charge + projector_charge
+            # authorities = list(request.user.authorities.all())
+            # if not authorities:
+            #     return render(request, 'bookings/booking_failed.html', {'message': 'No authorities assigned for approval'})
 
             # Base price (for up to 3 hours = 6 slots)
-            base_price = lecture_hall.ac_price if ac_required else lecture_hall.non_ac_price
-            per_slot_price = base_price / 6  # 3 hours = 6 slots
+            # base_price = lecture_hall.ac_price if ac_required else lecture_hall.non_ac_price
+            # per_slot_price = base_price / 6  # 3 hours = 6 slots
 
-            total_slots = len(time_slots)
-            extra_slots = max(0, total_slots - 6)  # Extra slots beyond 3 hours
+            # total_slots = len(time_slots)
+            # extra_slots = max(0, total_slots - 6)  # Extra slots beyond 3 hours
 
-            # Extra charge: 35% per extra slot
-            extra_charge = (per_slot_price * Decimal("0.35")) * extra_slots  
+            # # Extra charge: 35% per extra slot
+            # extra_charge = (per_slot_price * Decimal("0.35")) * extra_slots  
 
-            # Projector charge: Only for L18, L19, L20 at ₹1000 per slot
-            projector_charge = 0
-            if projector_required and lecture_hall.name in ["L18", "L19", "L20"]:
-                projector_charge = 1000 * total_slots  # ₹1000 per slot
+            # # Projector charge: Only for L18, L19, L20 at ₹1000 per slot
+            # projector_charge = 0
+            # if projector_required and lecture_hall.name in ["L18", "L19", "L20"]:
+            #     projector_charge = 1000 * total_slots  # ₹1000 per slot
 
-            # Final price calculation
-            total_price = base_price + extra_charge + projector_charge
+            # # Final price calculation
+            # total_price = base_price + extra_charge + projector_charge
 
             # Create a single booking instance and assign multiple time slots
             booking = Booking.objects.create(
                 user=request.user,
                 lecture_hall=lecture_hall,
                 date=date,
-                status="Pending",
+                status=status,
                 approval_token=str(uuid.uuid4()),  
                 approvals_pending={auth.email: False for auth in authorities},
                 ac_required=ac_required,
@@ -427,7 +491,6 @@ def booking_form(request):
         form = BookingForm()
 
     return render(request, 'bookings/booking_form.html', {'form': form})
-
 
 @login_required
 def get_available_slots(request):
